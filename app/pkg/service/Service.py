@@ -1,52 +1,72 @@
+import os
+import json
+import smtplib
+from pathlib import Path
+from dotenv import load_dotenv
 from sqlalchemy.orm import Session
-from app.EmailSender import EmailSender
+from email.message import EmailMessage
 from datetime import datetime, timezone
 from app.pkg.repository.LogRepo import LogRepository
 from app.pkg.repository.EmailRepo import EmailRepository
-from app.pkg.dto.DataClass import EmailDTO, LogDTO, Status
-from app.pkg.factory.Factory import insert_email_to_model, insert_log_to_model
+from app.pkg.pydantic.Dtos import EmailDTO, LogDTO, Status
+from app.pkg.factory.Mapper import insert_email_to_model, insert_log_to_model
 
+load_dotenv()
 
-PLACEHOLDER = {
-    "RESERVE": {
-        "subject": "Conferma prenotazione ",
-        "body": "Grazie {{nome}} per aver prenotato il libro '{{titoloLibro}}' in data {{data}}.",
-    },
-    "RETURN": {
-        "subject": "Conferma restituzione",
-        "body": "Grazie {{nome}} per aver restituito il libro '{{titoloLibro}}'.",
-    },
-}
+JSON_PATH = Path(__file__).resolve().parent / "templates.json"
 
 
 class EmailService:
+
+    SMTP_HOST = os.getenv("SMTP_HOST", "sandbox.smtp.mailtrap.io")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "2525"))
+    SMTP_USER = str(os.getenv("SMTP_USERNAME"))
+    SMTP_PASS = str(os.getenv("SMTP_PASSWORD"))
+    SENDER = "Private <noreply@example.com>"
 
     def __init__(self, db: Session):
         self.db = db
         self.repo1 = EmailRepository(db)
         self.repo2 = LogRepository(db)
-        self.sender = EmailSender()
+        self.templates = self.load()
 
-    def select(self, response: str, content: dict) -> str:
-        for key, value in content.items():
-            response = response.replace(f"{{{{{key}}}}}", str(value))
-        return response
+    @staticmethod
+    def load() -> dict:
+        with open(JSON_PATH, encoding="utf-8") as f:
+            return json.load(f)
 
-    def send(self, payload: EmailDTO) -> None:
+    @staticmethod
+    def render(template: str, fields: dict) -> str:
+        for key, value in fields.items():
+            template = template.replace(f"{{{{{key}}}}}", str(value))
+        return template
+
+    def SMPTsend(self, to: str, subject: str, body: str) -> None:
+        msg = EmailMessage()
+        msg["From"] = self.SENDER
+        msg["To"] = to
+        msg["Subject"] = subject
+        msg.set_content(body)
+
+        with smtplib.SMTP(self.SMTP_HOST, self.SMTP_PORT) as server:
+            server.login(self.SMTP_USER, self.SMTP_PASS)
+            server.send_message(msg)
+
+    def Mailsend(self, payload: EmailDTO) -> None:
         type = payload.email_type.value
 
-        if type not in PLACEHOLDER:
+        if type not in self.templates:
             raise ValueError(f"Tipo email non supportato: {type}")
 
-        response = PLACEHOLDER[type]
+        template = self.templates[type]
 
-        saved = self.repo1.save(insert_email_to_model(payload))
+        model = self.repo1.save(insert_email_to_model(payload))
 
         try:
-            self.sender.send(
+            self.SMPTsend(
                 to=payload.send_to,
-                subject=response["subject"],
-                body=self.select(response["body"], payload.fields),
+                subject=template["subject"],
+                body=self.render(template["body"], payload.fields),
             )
             status = Status.SENT
             error = None
@@ -58,7 +78,7 @@ class EmailService:
         self.repo2.save(
             insert_log_to_model(
                 LogDTO(
-                    email_id=saved.id,
+                    email_id=model.id,
                     status=status,
                     error_message=error,
                     created_at=datetime.now(timezone.utc),

@@ -1,5 +1,5 @@
 from .BaseRepo import BaseRepo
-from app.pkg.model.ORM import Log
+from app.pkg.model.Orms import Log
 from sqlalchemy.orm import Session
 
 

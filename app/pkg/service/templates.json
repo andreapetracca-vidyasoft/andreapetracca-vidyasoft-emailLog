@@ -1,0 +1,10 @@
+{
+    "RESERVE": {
+        "subject": "Conferma prenotazione",
+        "body": "Grazie {{nome}} per aver prenotato il libro '{{titoloLibro}}' in data {{data}}."
+    },
+    "RETURN": {
+        "subject": "Conferma restituzione",
+        "body": "Grazie {{nome}} per aver restituito il libro '{{titoloLibro}}'."
+    }
+}

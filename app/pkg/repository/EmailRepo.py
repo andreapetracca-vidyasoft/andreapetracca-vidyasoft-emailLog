@@ -1,6 +1,6 @@
 from .BaseRepo import BaseRepo
 from sqlalchemy.orm import Session
-from app.pkg.model.ORM import Email
+from app.pkg.model.Orms import Email
 
 
 class EmailRepository(BaseRepo):
